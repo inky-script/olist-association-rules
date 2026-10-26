@@ -1,0 +1,13 @@
+# Dữ liệu Kaggle (tải về theo README, không đưa lên repo)
+data/
+
+# Môi trường & cache
+.venv/
+venv/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# File tạm
+.tmp_*/
+~$*.docx
