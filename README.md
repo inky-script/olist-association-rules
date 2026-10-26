@@ -34,3 +34,16 @@ olist-association-rules/
    streamlit run app.py
    ```
    Phase 2 có benchmark ở minsup rất nhỏ nên có thể mất 10–20 phút.
+
+## Báo cáo Word
+
+```
+python report/build_report.py
+```
+
+Sinh `report/BaoCao_DoAn_Olist.docx` (mục 1–11). Bảng, hình và số liệu kết quả được đọc tự động
+từ `outputs/` nên cần chạy lại lệnh này **sau khi chạy Phase 2** để báo cáo có số liệu thật.
+Các chỗ tô vàng `[...]` là phần nhóm cần tự điền (giảng viên, lớp, cấu hình máy, nhận xét cụm insight).
+Ảnh chụp màn hình app đặt tại `report/screenshots/` với tên `app_category.png`, `app_cart.png`,
+`app_rules.png`, `app_algo.png` sẽ được chèn tự động.
+Mở file trong Word, nhấn **Ctrl+A → F9** để cập nhật mục lục.

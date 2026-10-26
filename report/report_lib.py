@@ -305,6 +305,9 @@ def code_block(doc, code, cap=None, font_size=9.5):
     cell = t.rows[0].cells[0]
     cell.width = Cm(16.0)
     _shade(cell, CODE_FILL)
+    # không cho khối mã bị cắt ngang qua hai trang
+    trpr = t.rows[0]._tr.get_or_add_trPr()
+    trpr.append(OxmlElement("w:cantSplit"))
     lines = code.strip("\n").split("\n")
     first = cell.paragraphs[0]
     for k, line in enumerate(lines):

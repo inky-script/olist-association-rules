@@ -3,10 +3,12 @@
 Sinh báo cáo Word cho Đề tài 5 (Olist).
     python report/build_report.py            -> report/BaoCao_DoAn_Olist.docx
 
-PHASE 4: trang bìa, phân công, mục 3–5. (PHASE 5 bổ sung mục 6–11 vào cùng file.)
-Hình lấy từ outputs/figures/ nếu đã chạy Phase 2; nếu chưa có sẽ chèn khung giữ chỗ.
+PHASE 4: trang bìa, phân công, mục 3–5.  PHASE 5: mục 6–11 (sections_6_11.py).
+Bảng, hình và số liệu kết quả lấy từ outputs/ nếu đã chạy Phase 2 (đổi thư mục bằng biến
+môi trường OLIST_OUTPUTS); nếu chưa có sẽ chèn khung giữ chỗ.
 Các đoạn [trong ngoặc vuông, tô vàng] là số liệu cần điền từ output khi chạy dữ liệu thật.
 """
+import os
 from pathlib import Path
 
 import matplotlib
@@ -17,12 +19,14 @@ from matplotlib.patches import FancyArrowPatch, FancyBboxPatch
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Pt
 
+from sections_6_11 import build_part2, load_results, num, pct
 from report_lib import (add_inline, add_page_border, add_page_number_footer, add_toc,
                         bullet, bullets, caption, clear_footer, code_block, figure, formula,
                         h1, h2, h3, new_document, new_section, page_break, para, table)
 
 ROOT = Path(__file__).resolve().parents[1]
-OUT_FIG = ROOT / "outputs" / "figures"
+OUT_DIR = Path(os.environ.get("OLIST_OUTPUTS", ROOT / "outputs"))
+OUT_FIG = OUT_DIR / "figures"
 REPORT_FIG = ROOT / "report" / "figures"
 OUT_FILE = ROOT / "report" / "BaoCao_DoAn_Olist.docx"
 
@@ -500,7 +504,22 @@ def section4(doc):
 # ============================================================================
 # 5. TIỀN XỬ LÝ DỮ LIỆU
 # ============================================================================
-def section5(doc):
+def section5(doc, res):
+    # Số liệu giỏ hàng tự điền từ outputs/tables/basket_size_distribution.csv nếu có
+    bk = res["baskets"]
+    if bk is not None and len(bk):
+        size, cnt = bk.iloc[:, 0], bk["n_orders"]
+        total = cnt.sum()
+        bucket = [cnt[size == 1].sum(), cnt[size == 2].sum(), cnt[size == 3].sum(),
+                  cnt[size >= 4].sum()]
+        basket_rows = [[lab, num(v), pct(v / total, 2)]
+                       for lab, v in zip(["1", "2", "3", "≥ 4"], bucket)]
+        multi_pct = pct(1 - bucket[0] / total, 2)
+        n_all, n_multi = num(total), num(total - bucket[0])
+    else:
+        basket_rows = [[lab, "[[...]]", "[[...]]"] for lab in ["1", "2", "3", "≥ 4"]]
+        multi_pct, n_all, n_multi = "[[x]]%", "[[...]]", "[[...]]"
+
     h1(doc, "5. Tiền xử lý dữ liệu")
 
     h2(doc, "5.1. Quy trình tổng quát")
@@ -646,19 +665,18 @@ onehot = pd.DataFrame(arr, columns=te.columns_, index=transactions.index)''', ca
            "Hình 5.2: Phân bố số danh mục trong một đơn hàng và top 15 danh mục",
            hint="outputs/figures/01_basket_distribution.png (sinh bởi phase2_mining.py)")
     table(doc, ["Số danh mục trong đơn", "Số đơn hàng", "Tỷ lệ"],
-          [["1", "[[...]]", "[[...]]"], ["2", "[[...]]", "[[...]]"], ["3", "[[...]]", "[[...]]"],
-           ["≥ 4", "[[...]]", "[[...]]"]],
+          basket_rows,
           [5.0, 4.0, 3.0], cap="Bảng 5.5: Phân bố kích thước giỏ hàng "
                                "(nguồn: outputs/tables/basket_size_distribution.csv)",
           align=["c", "r", "r"])
     para(doc, "Hệ quả của độ thưa này là rất lớn. Một giao dịch chỉ có một danh mục không bao "
-              "giờ đóng góp vào support của bất kỳ tập hai phần tử nào. Do đó, nếu chỉ có khoảng "
-              "[[x]]% đơn hàng chứa từ hai danh mục trở lên, thì support của mọi cặp danh mục "
-              "đều nhỏ hơn [[x]]%, buộc ngưỡng minsup phải rất thấp (cỡ 10⁻⁴ đến 10⁻³) mới tìm "
+              "giờ đóng góp vào support của bất kỳ tập hai phần tử nào. Do đó, khi chỉ có khoảng "
+              f"{multi_pct} đơn hàng chứa từ hai danh mục trở lên, thì support của mọi cặp danh "
+              f"mục đều nhỏ hơn {multi_pct}, buộc ngưỡng minsup phải rất thấp (cỡ 10⁻⁴ đến 10⁻³) mới tìm "
               "được luật. Để phân tích đầy đủ, nhóm thiết kế **hai kịch bản** dữ liệu (Bảng 5.6).")
     table(doc, ["Tiêu chí", "Kịch bản ALL", "Kịch bản MULTI"],
           [["Tập giao dịch", "Toàn bộ đơn hàng hợp lệ", "Chỉ đơn có ≥ 2 danh mục khác nhau"],
-           ["Số giao dịch", "[[...]]", "[[...]]"],
+           ["Số giao dịch", n_all, n_multi],
            ["Dải minsup khảo sát", "10⁻² → 10⁻⁴", "10⁻¹ → 3×10⁻³"],
            ["Ý nghĩa của support", "Tỷ lệ trên **toàn thị trường**",
             "Tỷ lệ trong nhóm khách **đã mua nhiều danh mục**"],
@@ -711,7 +729,9 @@ def build():
     page_break(doc)
     section4(doc)
     page_break(doc)
-    section5(doc)
+    res = load_results(OUT_DIR / "tables")
+    section5(doc, res)
+    build_part2(doc, ROOT, OUT_DIR, REPORT_FIG)
 
     doc.save(OUT_FILE)
     print(f"Đã tạo {OUT_FILE}")
