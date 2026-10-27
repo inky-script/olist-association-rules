@@ -15,7 +15,10 @@ Cách chạy (sau Phase 1):
 
 # %% 0. Thư viện & cấu hình
 import argparse
+import gc
 import inspect
+import json
+import os
 import time
 from pathlib import Path
 
@@ -40,11 +43,15 @@ MINSUP_GRID = {
 }
 MIN_CONF_BENCH = 0.01    # confidence tối thiểu khi đếm số luật trong benchmark
 
-# Tham số sinh luật cuối cùng (kịch bản ALL - phản ánh đúng thị trường thật)
-FINAL_MINSUP = 0.0001
-FINAL_MIN_CONF = 0.01
+# Tham số sinh luật cuối cùng. Dùng kịch bản MULTI: trên dữ liệu thật > 99% đơn chỉ có
+# 1 danh mục nên ở kịch bản ALL lift của gần như mọi cặp < 1 (do khách hiếm mua 2 danh mục
+# cùng lúc, không phải do 2 danh mục không liên quan). Xét riêng giỏ đa danh mục mới đo
+# được danh mục nào "đi cùng nhau" hơn ngẫu nhiên. Bảng pair_lift_all_vs_multi.csv minh họa.
+FINAL_SCENARIO = "multi"
+FINAL_MINSUP = 0.005     # ~4 đơn trên ~700 giỏ đa danh mục
+FINAL_MIN_CONF = 0.05
 MIN_LIFT = 1.2           # loại luật có lift xấp xỉ 1 (A và B gần như độc lập)
-MIN_PAIR_COUNT = 10      # luật phải xuất hiện trong >= 10 đơn, tránh luật ngẫu nhiên
+MIN_PAIR_COUNT = 5       # luật phải xuất hiện trong >= 5 đơn, tránh luật ngẫu nhiên
 TOP_K = 20
 
 # Thí nghiệm mở rộng ở mức SẢN PHẨM (product_id): hàng nghìn item thay vì ~70 danh mục,
@@ -55,7 +62,7 @@ PRODUCT_REPEATS = 1      # mỗi lần chạy đã đủ dài nên nhiễu thờ
 # Apriori (mlxtend, bản dense) đếm support bằng mảng bool kích thước
 # (số giỏ x số ứng viên x độ dài itemset) -> ước lượng bộ nhớ trước khi chạy,
 # vượt ngân sách thì bỏ qua và ghi nhận là "không khả thi"
-APRIORI_MEM_BUDGET_GB = 2.0
+APRIORI_MEM_BUDGET_GB = 1.0
 
 plt.rcParams.update({"figure.dpi": 120, "axes.grid": True, "grid.alpha": 0.3,
                      "axes.spines.top": False, "axes.spines.right": False})
@@ -131,21 +138,34 @@ def time_algo(func, onehot, minsup, repeats=N_REPEATS):
     return float(np.median(times)), result
 
 
+def apriori_mem_gb(onehot: pd.DataFrame, minsup: float) -> float:
+    """Ước lượng bộ nhớ Apriori (mlxtend, dense) ở bước sinh cặp k = 2, bước tốn kém nhất:
+    mảng bool (số giỏ x số cặp ứng viên x 2) cộng kết quả trung gian ~ 3 byte/ô."""
+    n_freq = int((onehot.mean() >= minsup).sum())
+    return len(onehot) * (n_freq * (n_freq - 1) // 2) * 3 / 1024 ** 3
+
+
 def benchmark(onehot: pd.DataFrame, scenario: str) -> pd.DataFrame:
     rows = []
     n_tx = len(onehot)
     for minsup in MINSUP_GRID[scenario]:
-        t_ap, f_ap = time_algo(apriori, onehot, minsup)
         t_fp, f_fp = time_algo(fpgrowth, onehot, minsup)
-
-        # Kiểm chứng: hai thuật toán phải ra CÙNG tập phổ biến
-        same = set(f_ap["itemsets"]) == set(f_fp["itemsets"])
+        est_gb = apriori_mem_gb(onehot, minsup)
+        if est_gb <= APRIORI_MEM_BUDGET_GB:
+            t_ap, f_ap = time_algo(apriori, onehot, minsup)
+            # Kiểm chứng: hai thuật toán phải ra CÙNG tập phổ biến
+            same = set(f_ap["itemsets"]) == set(f_fp["itemsets"])
+        else:
+            t_ap, same = np.nan, np.nan
+            print(f"[{scenario}] minsup={minsup}: bỏ qua Apriori (ước tính {est_gb:.1f} GB RAM)")
+        gc.collect()
         rules = make_rules(f_fp, n_tx, MIN_CONF_BENCH)
         n_rules_lift = int((rules["lift"] >= MIN_LIFT).sum()) if len(rules) else 0
 
         rows.append({
             "scenario": scenario, "n_transactions": n_tx, "minsup": minsup,
             "minsup_count": int(np.ceil(minsup * n_tx)),
+            "apriori_est_mem_gb": round(est_gb, 3),
             "apriori_sec": round(t_ap, 4), "fpgrowth_sec": round(t_fp, 4),
             "speedup_fp_vs_ap": round(t_ap / t_fp, 2) if t_fp > 0 else np.nan,
             "n_itemsets": len(f_fp),
@@ -287,6 +307,68 @@ def to_text(itemset) -> str:
     return ", ".join(sorted(itemset))
 
 
+def environment() -> dict:
+    """Cấu hình máy chạy thực nghiệm (cho Bảng 7.1 của báo cáo)."""
+    import platform
+    import subprocess
+
+    import mlxtend
+    cpu = platform.processor()
+    ram_gb = None
+    if platform.system() == "Windows":
+        try:
+            cpu = subprocess.run(
+                ["powershell", "-NoProfile", "-Command",
+                 "(Get-CimInstance Win32_Processor | Select-Object -First 1).Name"],
+                capture_output=True, text=True, timeout=30).stdout.strip() or cpu
+        except (OSError, subprocess.SubprocessError):
+            pass
+        import ctypes
+
+        class MemStatus(ctypes.Structure):
+            _fields_ = [("dwLength", ctypes.c_ulong), ("dwMemoryLoad", ctypes.c_ulong),
+                        ("ullTotalPhys", ctypes.c_ulonglong), ("ullAvailPhys", ctypes.c_ulonglong),
+                        ("ullTotalPageFile", ctypes.c_ulonglong),
+                        ("ullAvailPageFile", ctypes.c_ulonglong),
+                        ("ullTotalVirtual", ctypes.c_ulonglong),
+                        ("ullAvailVirtual", ctypes.c_ulonglong),
+                        ("ullAvailExtendedVirtual", ctypes.c_ulonglong)]
+        st = MemStatus()
+        st.dwLength = ctypes.sizeof(MemStatus)
+        if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(st)):
+            ram_gb = round(st.ullTotalPhys / 1024 ** 3, 1)
+    elif hasattr(os, "sysconf"):
+        ram_gb = round(os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES") / 1024 ** 3, 1)
+    release = platform.release()
+    # platform báo Windows 11 là "10"; build >= 22000 mới là Windows 11
+    if platform.system() == "Windows" and release == "10" \
+            and int(platform.version().split(".")[-1]) >= 22000:
+        release = "11"
+    return {"cpu": cpu, "cores": os.cpu_count(), "ram_gb": ram_gb,
+            "os": f"{platform.system()} {release} ({platform.version()})",
+            "python": platform.python_version(), "pandas": pd.__version__,
+            "numpy": np.__version__, "mlxtend": mlxtend.__version__}
+
+
+def pair_lift_comparison(onehot_all: pd.DataFrame, onehot_multi: pd.DataFrame) -> pd.DataFrame:
+    """Lift của từng cặp danh mục tính trên toàn bộ giỏ (ALL) và trên giỏ đa danh mục (MULTI),
+    cho các cặp xuất hiện cùng nhau trong >= MIN_PAIR_COUNT đơn."""
+    m = onehot_multi.astype(np.int32)
+    co = m.T @ m                                   # số đơn chứa đồng thời 2 danh mục
+    n_all, n_multi = len(onehot_all), len(onehot_multi)
+    cnt_all, cnt_multi = onehot_all.sum(), onehot_multi.sum()
+    rows = []
+    cats = list(co.columns)
+    for i, a in enumerate(cats):
+        for b in cats[i + 1:]:
+            n = int(co.at[a, b])
+            if n >= MIN_PAIR_COUNT:
+                rows.append({"cat_a": a, "cat_b": b, "pair_count": n,
+                             "lift_all": n * n_all / (cnt_all[a] * cnt_all[b]),
+                             "lift_multi": n * n_multi / (cnt_multi[a] * cnt_multi[b])})
+    return pd.DataFrame(rows).sort_values("pair_count", ascending=False).reset_index(drop=True)
+
+
 def final_rules(onehot: pd.DataFrame):
     n_tx = len(onehot)
     freq = fpgrowth(onehot, min_support=FINAL_MINSUP, use_colnames=True, max_len=MAX_LEN)
@@ -398,6 +480,12 @@ def main():
     print("Ví dụ 5 transaction đa danh mục:\n", tx_multi.head().to_string())
     dist = describe_baskets(tx_all, onehot_all, fig_dir)
     dist.to_csv(tab_dir / "basket_size_distribution.csv")
+    # Số liệu tóm tắt cho báo cáo (report/build_report.py đọc file này)
+    (tab_dir / "phase2_summary.json").write_text(json.dumps({
+        "n_transactions": len(onehot_all), "n_categories": onehot_all.shape[1],
+        "density": float(onehot_all.values.mean()), "n_multi": len(tx_multi),
+        "environment": environment(),
+    }, indent=2, ensure_ascii=False), encoding="utf-8")
 
     print("\n=== 2. BENCHMARK APRIORI vs FP-GROWTH ===")
     bench = pd.concat([benchmark(onehot_all, "all"), benchmark(onehot_multi, "multi")],
@@ -409,8 +497,13 @@ def main():
     print("\n=== 2b. THÍ NGHIỆM MỞ RỘNG MỨC SẢN PHẨM (product_id) ===")
     product_level_benchmark(df, fig_dir, tab_dir)
 
-    print("\n=== 3. LUẬT KẾT HỢP CUỐI CÙNG (kịch bản ALL) ===")
-    freq, rules, top = final_rules(onehot_all)
+    print("\n=== 2c. LIFT CỦA CÁC CẶP DANH MỤC: ALL vs MULTI ===")
+    pairs = pair_lift_comparison(onehot_all, onehot_multi)
+    pairs.to_csv(tab_dir / "pair_lift_all_vs_multi.csv", index=False)
+    print(pairs.head(15).to_string(index=False))
+
+    print(f"\n=== 3. LUẬT KẾT HỢP CUỐI CÙNG (kịch bản {FINAL_SCENARIO.upper()}) ===")
+    freq, rules, top = final_rules(onehot_multi if FINAL_SCENARIO == "multi" else onehot_all)
     freq.assign(itemsets=freq["itemsets"].apply(to_text),
                 length=freq["itemsets"].str.len()) \
         .sort_values("support", ascending=False) \

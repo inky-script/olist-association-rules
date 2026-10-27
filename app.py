@@ -58,13 +58,16 @@ def load_precomputed(path: str) -> pd.DataFrame:
 
 
 @st.cache_data(show_spinner=False)
-def mine_live(path: str, algorithm: str, minsup: float, min_conf: float):
+def mine_live(path: str, algorithm: str, minsup: float, min_conf: float, multi_only: bool):
     """Chạy lại Apriori/FP-Growth trên dữ liệu đã làm sạch (Phase 1)."""
     from mlxtend.frequent_patterns import apriori, fpgrowth
     from phase2_mining import build_transactions, encode, make_rules, to_text
 
     df = pd.read_csv(path, usecols=["order_id", "category"])
-    onehot = encode(build_transactions(df))
+    tx = build_transactions(df)
+    if multi_only:
+        tx = tx[tx.str.len() >= 2]
+    onehot = encode(tx)
     func = apriori if algorithm == "Apriori" else fpgrowth
 
     t0 = time.perf_counter()
@@ -117,9 +120,10 @@ def recommend(rules: pd.DataFrame, cart: set, min_conf: float, min_lift: float,
 
 def explain(row) -> str:
     base = ", ".join(pretty(c) for c in sorted(row["ant_set"]))
-    return (f"Khách mua **{base}** có **{row['confidence']:.1%}** khả năng mua thêm "
-            f"**{pretty(row['recommend'])}** — cao gấp **{row['lift']:.1f} lần** so với "
-            f"mức mua ngẫu nhiên (dựa trên {int(row['pair_count'])} đơn).")
+    return (f"Trong các đơn mua nhiều danh mục, khách mua **{base}** có "
+            f"**{row['confidence']:.1%}** khả năng mua thêm **{pretty(row['recommend'])}** — "
+            f"cao gấp **{row['lift']:.1f} lần** mức ngẫu nhiên (dựa trên "
+            f"{int(row['pair_count'])} đơn).")
 
 
 def show_recommendations(recs: pd.DataFrame, sort_label: str, key: str) -> None:
@@ -173,7 +177,8 @@ def show_recommendations(recs: pd.DataFrame, sort_label: str, key: str) -> None:
 # ----------------------------------------------------------------------------
 st.title("🛒 Gợi ý mua kèm danh mục sản phẩm – Olist")
 st.caption("Đề tài 5 · Thực hành Khai thác dữ liệu · Luật kết hợp Apriori & FP-Growth "
-           "trên Brazilian E-Commerce Public Dataset by Olist")
+           "trên Brazilian E-Commerce Public Dataset by Olist · Luật được khai thác trên các "
+           "đơn có từ 2 danh mục trở lên (confidence, lift tính trong nhóm này)")
 
 # ---- Sidebar: nguồn luật & ngưỡng lọc
 with st.sidebar:
@@ -193,13 +198,16 @@ with st.sidebar:
                      "Hãy chạy `python src/phase1_preprocessing.py` trước.")
         else:
             algorithm = st.selectbox("Thuật toán", ["FP-Growth", "Apriori"])
+            multi_only = st.checkbox("Chỉ xét giỏ có ≥ 2 danh mục (khuyến nghị)", value=True,
+                                     help="Trên toàn bộ giỏ, >99% đơn chỉ có 1 danh mục nên "
+                                          "lift của gần như mọi cặp < 1.")
             minsup = st.select_slider(
-                "minsup", options=[0.01, 0.005, 0.002, 0.001, 0.0005, 0.0003, 0.0002, 0.0001],
-                value=0.0005, format_func=lambda v: f"{v:g}")
+                "minsup", options=[0.05, 0.02, 0.01, 0.005, 0.002, 0.001, 0.0005, 0.0001],
+                value=0.005 if multi_only else 0.0005, format_func=lambda v: f"{v:g}")
             live_conf = st.slider("Confidence tối thiểu khi sinh luật", 0.0, 0.5, 0.01, 0.01)
             with st.spinner(f"Đang chạy {algorithm}..."):
                 rules, runtime, n_freq, n_tx = mine_live(str(CLEAN_FILE), algorithm,
-                                                         minsup, live_conf)
+                                                         minsup, live_conf, multi_only)
             st.success(f"{algorithm}: {runtime:.2f}s · {n_freq:,} tập phổ biến · "
                        f"{len(rules):,} luật (lift > 1) trên {n_tx:,} giỏ")
 
@@ -208,7 +216,7 @@ with st.sidebar:
     min_conf = st.slider("Confidence tối thiểu", 0.0, 1.0, 0.0, 0.01)
     min_lift = st.slider("Lift tối thiểu", 1.0, 20.0, 1.2, 0.1,
                          help="Lift ≈ 1 nghĩa là hai danh mục gần như độc lập → không nên gợi ý.")
-    min_count = st.number_input("Số đơn tối thiểu chứa cả hai vế", 1, 1000, 10,
+    min_count = st.number_input("Số đơn tối thiểu chứa cả hai vế", 1, 1000, 5,
                                 help="Loại các luật chỉ xuất hiện trong rất ít đơn (dễ ngẫu nhiên).")
     sort_label = st.selectbox("Xếp hạng theo", list(SORT_OPTIONS))
     top_n = st.slider("Số gợi ý tối đa", 3, 20, 10)

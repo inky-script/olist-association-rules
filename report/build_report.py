@@ -19,7 +19,7 @@ from matplotlib.patches import FancyArrowPatch, FancyBboxPatch
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Pt
 
-from sections_6_11 import build_part2, load_results, num, pct
+from sections_6_11 import build_part2, load_results, num, pct, vn
 from report_lib import (add_inline, add_page_border, add_page_number_footer, add_toc,
                         bullet, bullets, caption, clear_footer, code_block, figure, formula,
                         h1, h2, h3, new_document, new_section, page_break, para, table)
@@ -520,6 +520,22 @@ def section5(doc, res):
         basket_rows = [[lab, "[[...]]", "[[...]]"] for lab in ["1", "2", "3", "≥ 4"]]
         multi_pct, n_all, n_multi = "[[x]]%", "[[...]]", "[[...]]"
 
+    # Số liệu tóm tắt từ phase1_summary.json / phase2_summary.json (nếu đã chạy)
+    p1, p2 = res["p1"], res["p2"]
+
+    def g(d, key, fmt=num):
+        return fmt(d[key]) if key in d else f"[[{key}]]"
+
+    unknown_rows = g(p1, "unknown_rows")
+    orders_before, orders_after = g(p1, "orders_before_filter"), g(p1, "orders_after_filter")
+    rows_after = g(p1, "rows_after_filter")
+    rows_tx = (num(p1["rows_after_filter"] - p1["unknown_rows_after_filter"])
+               if "rows_after_filter" in p1 else "[[...]]")
+    iqr = g(p1, "iqr_upper", lambda x: vn(x, 2))
+    out_pct = g(p1, "outlier_pct", lambda x: pct(x, 1))
+    n_tx, n_cat = g(p2, "n_transactions"), g(p2, "n_categories")
+    density = g(p2, "density", lambda x: pct(x, 2))
+
     h1(doc, "5. Tiền xử lý dữ liệu")
 
     h2(doc, "5.1. Quy trình tổng quát")
@@ -575,7 +591,7 @@ assert len(df) == len(items), "Số dòng thay đổi sau merge -> khóa bị nh
     para(doc, "Nhóm áp dụng ba quy tắc xử lý tương ứng với ba tình huống thiếu dữ liệu ảnh "
               "hưởng tới cột danh mục:")
     table(doc, ["Tình huống", "Cách xử lý", "Lý do lựa chọn"],
-          [["Sản phẩm không có danh mục (610 sản phẩm, [[số dòng]] dòng mua hàng)",
+          [[f"Sản phẩm không có danh mục (610 sản phẩm, {unknown_rows} dòng mua hàng)",
             "Gán nhãn `unknown`; giữ lại khi thống kê nhưng **loại khỏi giao dịch**",
             "Không thể suy ra danh mục một cách tin cậy; giữ nhãn giúp minh bạch số lượng bị loại"],
            ["Danh mục chưa có bản dịch (`pc_gamer`, `portateis_cozinha_…`)",
@@ -596,14 +612,14 @@ assert len(df) == len(items), "Số dòng thay đổi sau merge -> khóa bị nh
               "loại bỏ vì không phản ánh giao dịch thực sự hoàn tất. Các trạng thái còn lại như "
               "`shipped`, `invoiced`, `processing` vẫn được giữ, vì tại thời điểm đặt hàng khách "
               "đã thể hiện ý định mua đầy đủ các sản phẩm trong giỏ, đây chính là thông tin mà "
-              "phân tích giỏ hàng cần. Sau khi lọc, số đơn hàng còn lại là [[số đơn sau lọc]], "
-              "tương ứng [[số dòng sau lọc]] dòng sản phẩm.")
+              f"phân tích giỏ hàng cần. Trong số {orders_before} đơn có sản phẩm, sau khi lọc còn lại "
+              f"{orders_after} đơn, tương ứng {rows_after} dòng sản phẩm.")
 
     h2(doc, "5.6. Xử lý giá trị ngoại lệ")
     para(doc, "Giá trị ngoại lệ của `price` được phát hiện bằng quy tắc khoảng tứ phân vị (IQR):")
     formula(doc, "IQR = Q₃ − Q₁ ,     ngưỡng trên = Q₃ + 1,5 × IQR")
-    para(doc, "Với dữ liệu Olist, ngưỡng trên xấp xỉ [[ngưỡng IQR]] BRL và có khoảng "
-              "[[tỷ lệ % dòng ngoại lệ]] số dòng vượt ngưỡng. Tuy nhiên, nhóm quyết định **chỉ "
+    para(doc, f"Với dữ liệu Olist, ngưỡng trên xấp xỉ {iqr} BRL và có khoảng "
+              f"{out_pct} số dòng vượt ngưỡng. Tuy nhiên, nhóm quyết định **chỉ "
               "gắn cờ** `is_price_outlier`, **không loại bỏ** các dòng này, vì hai lý do. Thứ "
               "nhất, luật kết hợp chỉ dựa trên sự *có mặt* của danh mục trong giỏ hàng, giá trị "
               "giá không tham gia vào việc tính Support, Confidence hay Lift. Thứ hai, các sản "
@@ -652,15 +668,15 @@ tx = df.groupby("order_id")["category"].apply(lambda s: sorted(set(s)))''', cap=
 te = TransactionEncoder()
 arr = te.fit(transactions.tolist()).transform(transactions.tolist())
 onehot = pd.DataFrame(arr, columns=te.columns_, index=transactions.index)''', cap="Đoạn mã 5.4: Mã hóa one-hot bằng TransactionEncoder")
-    para(doc, "Với dữ liệu thật, ma trận one-hot có kích thước [[số giao dịch]] × [[số danh "
-              "mục]]. Vì số cột nhỏ, ma trận dạng dày (dense) với kiểu `bool` chỉ chiếm vài MB "
+    para(doc, f"Với dữ liệu thật, ma trận one-hot có kích thước {n_tx} × {n_cat} (giao "
+              "dịch × danh mục). Vì số cột nhỏ, ma trận dạng dày (dense) với kiểu `bool` chỉ chiếm vài MB "
               "bộ nhớ, nên không cần dùng ma trận thưa.")
 
     h2(doc, "5.9. Phân tích độ thưa và thiết kế hai kịch bản")
     para(doc, "Sau khi tạo giao dịch, nhóm thống kê số danh mục khác nhau trong mỗi giỏ hàng "
               "(Hình 5.2 và Bảng 5.5). Kết quả xác nhận nhận định ở mục 4.6: phần lớn giao dịch "
               "chỉ có **đúng một danh mục**, và mật độ của ma trận one-hot chỉ khoảng "
-              "[[mật độ %]].")
+              f"{density}.")
     figure(doc, OUT_FIG / "01_basket_distribution.png",
            "Hình 5.2: Phân bố số danh mục trong một đơn hàng và top 15 danh mục",
            hint="outputs/figures/01_basket_distribution.png (sinh bởi phase2_mining.py)")
@@ -682,23 +698,30 @@ onehot = pd.DataFrame(arr, columns=te.columns_, index=transactions.index)''', ca
             "Tỷ lệ trong nhóm khách **đã mua nhiều danh mục**"],
            ["Ưu điểm", "Support, confidence, lift phản ánh đúng thực tế",
             "Mẫu mua kèm nổi bật hơn, minsup dễ chọn hơn"],
-           ["Hạn chế", "Support rất nhỏ, cần minsup thấp",
-            "Confidence bị thổi phồng do đã loại giỏ một danh mục"],
-           ["Vai trò trong đề tài", "**Sinh luật cuối cùng** và gợi ý trong app",
-            "So sánh hiệu năng, đối chiếu cấu trúc luật"]],
+           ["Hạn chế", "Support rất nhỏ; lift của hầu hết các cặp < 1 vì gần như mọi giỏ "
+                       "chỉ có một danh mục",
+            "Support, confidence chỉ có nghĩa trong nhóm khách mua đa danh mục"],
+           ["Vai trò trong đề tài", "Benchmark hiệu năng; đối chứng lift (mục 7.6)",
+            "**Sinh luật cuối cùng** và gợi ý trong app"]],
           [3.6, 6.0, 5.9], cap="Bảng 5.6: Hai kịch bản dữ liệu phục vụ khai thác", font_size=11)
-    para(doc, "Luật cuối cùng dùng cho diễn giải và ứng dụng demo được sinh từ kịch bản ALL, "
-              "để các độ đo phản ánh đúng xác suất trên toàn bộ khách hàng. Kịch bản MULTI được "
-              "dùng làm đối chứng: nếu một luật mạnh ở cả hai kịch bản thì luật đó càng đáng tin "
-              "cậy.")
+    para(doc, "Ban đầu nhóm dự định sinh luật cuối cùng từ kịch bản ALL. Tuy nhiên kết quả thực "
+              "nghiệm (mục 7.6) cho thấy trên toàn bộ giỏ hàng, lift của gần như mọi cặp danh mục "
+              "đều nhỏ hơn 1. Nguyên nhân là khách Olist hiếm khi mua hai danh mục trong cùng một "
+              "đơn, chứ không phải vì các danh mục không liên quan đến nhau. Do đó luật cuối cùng "
+              "dùng cho diễn giải và ứng dụng demo được sinh từ **kịch bản MULTI**: câu hỏi kinh "
+              "doanh trở thành *“khi khách đã mua từ hai danh mục trở lên, những danh mục nào hay "
+              "đi cùng nhau hơn mức ngẫu nhiên?”*. Đây chính là thông tin cần cho việc gợi ý mua "
+              "kèm. Kịch bản ALL được giữ lại cho benchmark hiệu năng và làm đối chứng.")
 
     h2(doc, "5.10. Tổng kết tiền xử lý")
     table(doc, ["Bước", "Trước", "Sau", "Ghi chú"],
           [["Ghép bảng", "112.650 dòng order_items", "112.650 dòng", "Bảo toàn số dòng (assert)"],
-           ["Lọc trạng thái", "[[...]] đơn", "[[...]] đơn", "Bỏ canceled, unavailable"],
-           ["Xử lý thiếu danh mục", "[[...]] dòng `unknown`", "Loại khỏi giao dịch", "Không điền khuyết"],
-           ["Tạo giao dịch", "[[...]] dòng", "[[...]] giao dịch", "Khử trùng danh mục trong đơn"],
-           ["One-hot", "[[...]] giao dịch", "Ma trận [[...]] × [[...]]", "Kiểu bool, dạng dày"]],
+           ["Lọc trạng thái", f"{orders_before} đơn", f"{orders_after} đơn",
+            "Bỏ canceled, unavailable"],
+           ["Xử lý thiếu danh mục", f"{unknown_rows} dòng `unknown`", "Loại khỏi giao dịch",
+            "Không điền khuyết"],
+           ["Tạo giao dịch", f"{rows_tx} dòng", f"{n_tx} giao dịch", "Khử trùng danh mục trong đơn"],
+           ["One-hot", f"{n_tx} giao dịch", f"Ma trận {n_tx} × {n_cat}", "Kiểu bool, dạng dày"]],
           [3.4, 4.0, 3.8, 4.3], cap="Bảng 5.7: Tóm tắt kết quả các bước tiền xử lý", font_size=11)
     para(doc, "Sau tiền xử lý, dữ liệu đã sẵn sàng cho bước khai thác: mỗi giao dịch là một tập "
               "danh mục sạch, đã chuẩn hóa tên tiếng Anh, không chứa danh mục không xác định và "

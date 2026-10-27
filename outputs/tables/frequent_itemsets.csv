@@ -1,0 +1,85 @@
+support,itemsets,length
+0.2796143250688705,furniture_decor,1
+0.2727272727272727,bed_bath_table,1
+0.14049586776859505,housewares,1
+0.128099173553719,baby,1
+0.10055096418732783,garden_tools,1
+0.09641873278236915,"bed_bath_table, furniture_decor",2
+0.09504132231404959,health_beauty,1
+0.09228650137741047,sports_leisure,1
+0.09090909090909091,cool_stuff,1
+0.07024793388429752,computers_accessories,1
+0.06887052341597796,home_confort,1
+0.06887052341597796,toys,1
+0.05922865013774105,"bed_bath_table, home_confort",2
+0.05509641873278237,watches_gifts,1
+0.048209366391184574,auto,1
+0.04269972451790634,stationery,1
+0.0371900826446281,telephony,1
+0.03581267217630854,home_construction,1
+0.03443526170798898,perfumery,1
+0.03305785123966942,"furniture_decor, housewares",2
+0.03168044077134986,electronics,1
+0.027548209366391185,"baby, cool_stuff",2
+0.027548209366391185,"bed_bath_table, housewares",2
+0.026170798898071626,"baby, toys",2
+0.024793388429752067,construction_tools_lights,1
+0.023415977961432508,"furniture_decor, garden_tools",2
+0.023415977961432508,"baby, bed_bath_table",2
+0.023415977961432508,construction_tools_construction,1
+0.02066115702479339,furniture_living_room,1
+0.02066115702479339,luggage_accessories,1
+0.02066115702479339,office_furniture,1
+0.01928374655647383,"health_beauty, sports_leisure",2
+0.01790633608815427,"furniture_decor, home_construction",2
+0.01652892561983471,market_place,1
+0.01652892561983471,"baby, furniture_decor",2
+0.015151515151515152,"bed_bath_table, health_beauty",2
+0.015151515151515152,"garden_tools, housewares",2
+0.015151515151515152,"housewares, sports_leisure",2
+0.015151515151515152,"construction_tools_lights, furniture_decor",2
+0.015151515151515152,fashion_bags_accessories,1
+0.015151515151515152,"health_beauty, perfumery",2
+0.013774104683195593,"bed_bath_table, cool_stuff",2
+0.013774104683195593,pet_shop,1
+0.012396694214876033,costruction_tools_garden,1
+0.012396694214876033,"computers_accessories, garden_tools",2
+0.011019283746556474,drinks,1
+0.011019283746556474,food,1
+0.011019283746556474,consoles_games,1
+0.009641873278236915,"cool_stuff, toys",2
+0.009641873278236915,"garden_tools, home_construction",2
+0.009641873278236915,musical_instruments,1
+0.009641873278236915,construction_tools_safety,1
+0.009641873278236915,"furniture_decor, watches_gifts",2
+0.009641873278236915,"furniture_decor, furniture_living_room",2
+0.008264462809917356,"furniture_decor, home_confort",2
+0.008264462809917356,kitchen_dining_laundry_garden_furniture,1
+0.008264462809917356,"cool_stuff, telephony",2
+0.008264462809917356,audio,1
+0.008264462809917356,small_appliances,1
+0.008264462809917356,art,1
+0.008264462809917356,"computers_accessories, telephony",2
+0.008264462809917356,"audio, watches_gifts",2
+0.008264462809917356,"stationery, toys",2
+0.006887052341597796,"art, furniture_decor",2
+0.006887052341597796,books_general_interest,1
+0.006887052341597796,"luggage_accessories, stationery",2
+0.006887052341597796,"construction_tools_construction, garden_tools",2
+0.006887052341597796,"baby, housewares",2
+0.006887052341597796,"auto, computers_accessories",2
+0.006887052341597796,"bed_bath_table, office_furniture",2
+0.006887052341597796,"computers_accessories, cool_stuff",2
+0.006887052341597796,"sports_leisure, watches_gifts",2
+0.006887052341597796,"computers_accessories, electronics",2
+0.005509641873278237,food_drink,1
+0.005509641873278237,books_technical,1
+0.005509641873278237,"sports_leisure, toys",2
+0.005509641873278237,industry_commerce_and_business,1
+0.005509641873278237,"computers_accessories, housewares",2
+0.005509641873278237,"cool_stuff, furniture_decor",2
+0.005509641873278237,"housewares, stationery",2
+0.005509641873278237,"bed_bath_table, garden_tools",2
+0.005509641873278237,"baby, garden_tools",2
+0.005509641873278237,"health_beauty, stationery",2
+0.005509641873278237,"furniture_decor, office_furniture",2

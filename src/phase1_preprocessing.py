@@ -13,6 +13,7 @@ File có thể mở trong VS Code/Jupyter theo từng cell (# %%).
 
 # %% 0. Thư viện & cấu hình
 import argparse
+import json
 from pathlib import Path
 
 import numpy as np
@@ -44,6 +45,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Olist - Phase 1 preprocessing")
     parser.add_argument("--data-dir", default="data/raw", type=Path)
     parser.add_argument("--out-dir", default="data/processed", type=Path)
+    parser.add_argument("--summary-dir", default="outputs/tables", type=Path)
     # parse_known_args để chạy được cả trong Jupyter (kernel truyền thêm tham số -f)
     args, _ = parser.parse_known_args()
     return args
@@ -218,7 +220,10 @@ def main():
     check_keys(dfs)
 
     df = merge_tables(dfs)
+    n_merged = len(df)
     df = handle_missing(df)
+    n_unknown_rows = int((df["category"] == UNKNOWN_CATEGORY).sum())
+    n_orders_before = df["order_id"].nunique()
     df = filter_orders(df)
     df = check_outliers(df)
     basket_stats(df)
@@ -227,6 +232,23 @@ def main():
     df.to_csv(out_file, index=False)
     report.to_csv(args.out_dir / "data_quality_report.csv", index=False)
     print(f"\nĐã lưu: {out_file} ({len(df):,} dòng) và data_quality_report.csv")
+
+    # Số liệu tóm tắt cho báo cáo (report/build_report.py đọc file này)
+    q1, q3 = df["price"].quantile([0.25, 0.75])
+    summary = {
+        "rows_merged": n_merged,
+        "unknown_rows": n_unknown_rows,
+        "orders_before_filter": int(n_orders_before),
+        "orders_after_filter": int(df["order_id"].nunique()),
+        "rows_after_filter": int(len(df)),
+        "unknown_rows_after_filter": int((df["category"] == UNKNOWN_CATEGORY).sum()),
+        "iqr_upper": float(q3 + 1.5 * (q3 - q1)),
+        "outlier_rows": int(df["is_price_outlier"].sum()),
+        "outlier_pct": float(df["is_price_outlier"].mean()),
+    }
+    args.summary_dir.mkdir(parents=True, exist_ok=True)
+    (args.summary_dir / "phase1_summary.json").write_text(json.dumps(summary, indent=2))
+    print(f"Đã lưu tóm tắt: {args.summary_dir / 'phase1_summary.json'}")
 
 
 if __name__ == "__main__":

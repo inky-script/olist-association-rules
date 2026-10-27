@@ -1,0 +1,11 @@
+{
+  "rows_merged": 112650,
+  "unknown_rows": 1603,
+  "orders_before_filter": 98666,
+  "orders_after_filter": 98199,
+  "rows_after_filter": 112101,
+  "unknown_rows_after_filter": 1589,
+  "iqr_upper": 277.4,
+  "outlier_rows": 8349,
+  "outlier_pct": 0.07447748012952606
+}

@@ -7,6 +7,7 @@ liệu thật. Nếu chưa có output, báo cáo chèn chỗ trống tô vàng �
 Tham số thuật toán đọc trực tiếp từ src/phase2_mining.py nên luôn khớp với mã nguồn.
 """
 import ast
+import json
 from pathlib import Path
 
 import matplotlib
@@ -63,7 +64,9 @@ def category_winner(res):
     b = res.get("bench")
     if b is None or b.empty:
         return None
-    b = b[b["scenario"] == "all"]
+    b = b[b["scenario"] == "all"].dropna(subset=["apriori_sec"])
+    if b.empty:
+        return None
     return "Apriori" if (b["apriori_sec"] < b["fpgrowth_sec"]).mean() >= 0.5 else "FP-Growth"
 
 
@@ -80,13 +83,17 @@ def product_findings(res):
 
 def load_results(table_dir: Path) -> dict:
     res = {}
-    for key, name in (("bench", "benchmark_apriori_vs_fpgrowth.csv"),
+    for key, name in (("pairs", "pair_lift_all_vs_multi.csv"),
+                      ("bench", "benchmark_apriori_vs_fpgrowth.csv"),
                       ("product", "benchmark_product_level.csv"),
                       ("top", "top20_rules.csv"),
                       ("rules", "all_rules.csv"),
                       ("baskets", "basket_size_distribution.csv")):
         f = table_dir / name
         res[key] = pd.read_csv(f) if f.exists() else None
+    for key, name in (("p1", "phase1_summary.json"), ("p2", "phase2_summary.json")):
+        f = table_dir / name
+        res[key] = json.loads(f.read_text()) if f.exists() else {}
     return res
 
 
@@ -356,10 +363,12 @@ rules = association_rules(freq_fp, metric="confidence", min_threshold=min_conf,
            ["Dải min_count – mức sản phẩm", grid_prod or PH,
             "Ngưỡng theo số đơn tuyệt đối vì support tương đối quá nhỏ"],
            ["Số lần chạy lặp", str(cfg.get("N_REPEATS", PH)), "Lấy trung vị thời gian để giảm nhiễu"],
+           ["Kịch bản sinh luật cuối", str(cfg.get("FINAL_SCENARIO", PH)).upper(),
+            "Trên ALL lift của gần như mọi cặp < 1 (mục 7.6)"],
            ["minsup luật cuối", f"{cfg.get('FINAL_MINSUP', PH):g}" if "FINAL_MINSUP" in cfg else PH,
-            "Đủ thấp để giữ các cặp danh mục hiếm nhưng có ý nghĩa"],
+            "Khoảng 4 đơn trong nhóm giỏ đa danh mục, giữ cả các cặp hiếm"],
            ["minconf luật cuối", f"{cfg.get('FINAL_MIN_CONF', PH):g}" if "FINAL_MIN_CONF" in cfg else PH,
-            "Đặt thấp vì giỏ thưa; độ mạnh được kiểm soát bằng lift"],
+            "Đặt thấp; độ mạnh của luật được kiểm soát bằng lift và số đơn"],
            ["Ngưỡng lift", f"≥ {cfg.get('MIN_LIFT', PH)}", "Loại các luật có lift xấp xỉ 1 (gần độc lập)"],
            ["Số đơn hỗ trợ tối thiểu", f"≥ {cfg.get('MIN_PAIR_COUNT', PH)}",
             "Tránh luật chỉ dựa trên vài đơn hàng ngẫu nhiên"],
@@ -368,10 +377,11 @@ rules = association_rules(freq_fp, metric="confidence", min_threshold=min_conf,
             "Bỏ qua lần chạy Apriori ước tính vượt ngưỡng, tránh treo máy"]],
           [4.2, 4.8, 6.5], cap="Bảng 6.4: Các tham số thực nghiệm (đọc trực tiếp từ mã nguồn)",
           font_size=11)
-    para(doc, "Ngưỡng confidence tối thiểu được đặt thấp có chủ đích. Vì phần lớn đơn hàng chỉ "
-              "có một danh mục, confidence của mọi luật trên toàn bộ dữ liệu đều nhỏ; nếu đặt "
-              "minconf cao (ví dụ 0,3 như các ví dụ siêu thị kinh điển) sẽ không còn luật nào. "
-              "Độ mạnh của luật vì vậy được đánh giá chủ yếu qua lift và số đơn hỗ trợ.")
+    para(doc, "Ngưỡng confidence tối thiểu được đặt thấp có chủ đích. Ngay cả trong nhóm giỏ đa "
+              "danh mục, mỗi danh mục có thể đi kèm với rất nhiều danh mục khác nhau, nên "
+              "confidence của từng luật hiếm khi cao như các ví dụ siêu thị kinh điển (minconf "
+              "0,3 trở lên). Độ mạnh của luật vì vậy được đánh giá chủ yếu qua lift và số đơn hỗ "
+              "trợ.")
 
 
 # ============================================================================
@@ -386,7 +396,8 @@ def _bench_table(doc, b, cap):
                      vn(r["speedup_fp_vs_ap"], 2) if pd.notna(r["speedup_fp_vs_ap"]) else "–",
                      str(int(r["n_itemsets"])), str(int(r["n_itemsets_len2plus"])),
                      str(int(r["n_rules"])), str(int(r[rule_col])),
-                     "✔" if bool(r["same_itemsets"]) else "✘"])
+                     "–" if pd.isna(r["same_itemsets"]) else
+                     ("✔" if str(r["same_itemsets"]) == "True" else "✘")])
     table(doc, ["minsup", "Số đơn tối thiểu", "Apriori (s)", "FP-Growth (s)", "Tỷ lệ AP/FP",
                 "Số tập phổ biến", "Tập ≥ 2 phần tử", "Số luật", "Luật lift ≥ ngưỡng", "Trùng khớp"],
           rows, [1.5, 1.6, 1.6, 1.7, 1.5, 1.6, 1.6, 1.4, 1.7, 1.3], cap=cap,
@@ -413,16 +424,20 @@ def _describe_bench(b):
     return txt
 
 
-def section7(doc, res, out_fig: Path):
+def section7(doc, res, cfg, out_fig: Path):
     h1(doc, "7. Kết quả và đánh giá")
 
     h2(doc, "7.1. Môi trường thực nghiệm")
+    env = res["p2"].get("environment", {})
+    libs = (f"pandas {env['pandas']}, NumPy {env['numpy']}, mlxtend {env['mlxtend']} "
+            if env else "pandas, NumPy, mlxtend ")
     table(doc, ["Thành phần", "Cấu hình"],
-          [["CPU", "[[tên CPU, số nhân]]"], ["RAM", "[[dung lượng RAM]]"],
-           ["Hệ điều hành", "[[Windows 10/11, macOS…]]"],
-           ["Ngôn ngữ", "Python [[phiên bản]]"],
-           ["Thư viện", "pandas, NumPy, mlxtend (apriori, fpgrowth, association_rules), "
-                        "matplotlib, Streamlit, Plotly"],
+          [["CPU", f"{env['cpu']} ({env['cores']} luồng)" if env else "[[tên CPU, số nhân]]"],
+           ["RAM", f"{vn(env['ram_gb'], 1)} GB" if env.get("ram_gb") else "[[dung lượng RAM]]"],
+           ["Hệ điều hành", env.get("os", "[[Windows 10/11, macOS…]]")],
+           ["Ngôn ngữ", f"Python {env.get('python', '[[phiên bản]]')}"],
+           ["Thư viện", libs + "(apriori, fpgrowth, association_rules), matplotlib, "
+                               "Streamlit, Plotly"],
            ["Đo thời gian", "`time.perf_counter()`, trung vị của nhiều lần chạy, chỉ đo bước "
                             "khai thác tập phổ biến (không tính đọc dữ liệu, mã hóa)"]],
           [3.5, 12.0], cap="Bảng 7.1: Môi trường thực nghiệm")
@@ -449,10 +464,10 @@ def section7(doc, res, out_fig: Path):
          "mà các tập 2 phần tử bắt đầu xuất hiện; tốc độ tăng của số luật.]]")
     para(doc, "Có thể quan sát hai đặc điểm. Thứ nhất, ở các mức minsup cao, chỉ có các tập "
               "một phần tử đạt ngưỡng, nên số luật bằng 0: đây là hệ quả trực tiếp của độ thưa "
-              "giỏ hàng đã phân tích ở mục 5.9. Thứ hai, số tập phổ biến và số luật tăng nhanh "
-              "khi minsup tiến về 10⁻⁴, nhưng số luật có lift vượt ngưỡng tăng chậm hơn nhiều. "
-              "Điều này cho thấy phần lớn luật mới xuất hiện ở minsup thấp là các luật yếu, gần "
-              "độc lập, và khẳng định vai trò của bước lọc theo lift.")
+              "giỏ hàng đã phân tích ở mục 5.9. Thứ hai, ngay cả khi minsup giảm tới 10⁻⁴, số luật "
+              "trong kịch bản ALL vẫn rất ít và hầu như không có luật nào có lift vượt ngưỡng. "
+              "Nguyên nhân được phân tích ở mục 7.6, và đây cũng là lý do luật cuối cùng được sinh "
+              "từ kịch bản MULTI.")
 
     h2(doc, "7.3. Kịch bản MULTI – giỏ hàng có từ hai danh mục")
     if b_multi is not None and len(b_multi):
@@ -464,11 +479,11 @@ def section7(doc, res, out_fig: Path):
            width_cm=16, hint="outputs/figures/02_benchmark_multi.png")
     para(doc, _describe_bench(b_multi) if b_multi is not None and len(b_multi) else
          "[[Nhận xét kịch bản MULTI, so sánh với ALL.]]")
-    para(doc, "So với kịch bản ALL, kịch bản MULTI có số giao dịch nhỏ hơn nhiều nên thời gian "
-              "chạy giảm mạnh, đồng thời support của các cặp danh mục cao hơn hẳn, nên các tập "
-              "hai phần tử xuất hiện ngay ở minsup tương đối cao. Hai kịch bản cho cùng một cấu "
-              "trúc quan hệ (cùng các cặp danh mục nổi bật), chỉ khác về thang đo của support và "
-              "confidence.")
+    para(doc, "So với kịch bản ALL, kịch bản MULTI có số giao dịch nhỏ hơn rất nhiều nên cả hai "
+              "thuật toán đều chạy trong vài mili giây, và chênh lệch thời gian giữa chúng không "
+              "còn ý nghĩa thực tế. Ngược lại, support của các cặp danh mục cao hơn hẳn, nên các "
+              "tập hai phần tử xuất hiện ngay ở minsup tương đối cao và số luật tăng đều khi giảm "
+              "minsup.")
 
     h2(doc, "7.4. Thí nghiệm mở rộng ở mức sản phẩm")
     para(doc, "Ở mức danh mục, không gian item chỉ khoảng 70 phần tử nên chưa đủ để thấy rõ ưu "
@@ -554,11 +569,48 @@ def section7(doc, res, out_fig: Path):
               "hợp về thời gian chạy; nếu mở rộng xuống mức sản phẩm hoặc dữ liệu lớn hơn, FP-Growth là lựa chọn "
               "an toàn hơn.")
 
-    h2(doc, "7.6. Đánh giá tập luật thu được")
+    h2(doc, "7.6. Vì sao lift trên toàn bộ giỏ hàng nhỏ hơn 1")
+    para(doc, "Bảng 7.5 so sánh lift của các cặp danh mục xuất hiện cùng nhau nhiều nhất, tính "
+              "theo hai cách: trên toàn bộ giao dịch (ALL) và chỉ trên các giao dịch có từ hai "
+              "danh mục (MULTI).")
+    pl = res.get("pairs")
+    if pl is not None and len(pl):
+        rows = [[_pretty(r["cat_a"]), _pretty(r["cat_b"]), str(int(r["pair_count"])),
+                 vn(r["lift_all"], 2), vn(r["lift_multi"], 2)] for _, r in pl.head(12).iterrows()]
+        table(doc, ["Danh mục A", "Danh mục B", "Số đơn chung", "Lift ALL", "Lift MULTI"], rows,
+              [4.6, 4.6, 2.2, 2.0, 2.1], cap="Bảng 7.5: Lift của các cặp danh mục phổ biến – "
+                                             "ALL và MULTI", align=["l", "l", "r", "r", "r"],
+              font_size=10.5)
+        below = (pl["lift_all"] < 1).mean()
+        above = (pl["lift_multi"] >= 1.2).sum()
+        para(doc, f"Trong {len(pl)} cặp danh mục cùng xuất hiện ở ít nhất "
+                  f"{cfg.get('MIN_PAIR_COUNT', 5)} đơn, có {pct(below, 0)} cặp có lift ALL nhỏ "
+                  f"hơn 1, trong khi {above} cặp có lift MULTI từ 1,2 trở lên.")
+    else:
+        table(doc, ["Danh mục A", "Danh mục B", "Số đơn chung", "Lift ALL", "Lift MULTI"],
+              [[PH] * 5 for _ in range(8)], [4.6, 4.6, 2.2, 2.0, 2.1],
+              cap="Bảng 7.5: Lift của các cặp danh mục phổ biến – ALL và MULTI "
+                  "(nguồn: outputs/tables/pair_lift_all_vs_multi.csv)", font_size=10.5)
+    para(doc, "Hiện tượng này có thể giải thích bằng công thức lift = support(A ∪ B) / "
+              "(support(A) · support(B)). Mẫu số là tần suất kỳ vọng nếu A và B độc lập, được "
+              "tính từ **mọi** đơn có A và **mọi** đơn có B. Tuy nhiên hơn 99% đơn hàng chỉ có "
+              "một danh mục, tức là về mặt cấu trúc A và B gần như không thể xuất hiện cùng nhau. "
+              "Tử số vì vậy luôn nhỏ hơn mức kỳ vọng, và lift bị kéo xuống dưới 1 với hầu hết mọi "
+              "cặp, kể cả những cặp có quan hệ bổ trợ rõ ràng. Nói cách khác, lift ALL đo việc "
+              "“khách có mua nhiều danh mục hay không”, chứ không đo việc “danh mục nào đi với "
+              "danh mục nào”. Khi xét riêng nhóm giỏ đa danh mục, yếu tố cấu trúc này bị loại bỏ "
+              "và lift phản ánh đúng mức độ liên kết giữa các danh mục.")
+    para(doc, "Bản thân phát hiện này đã là một insight kinh doanh quan trọng: **rào cản lớn nhất "
+              "của Olist không phải là chọn gợi ý nào, mà là khách hàng gần như không có thói "
+              "quen mua nhiều danh mục trong một đơn**. Chiến lược cross-selling vì vậy cần đi kèm "
+              "các ưu đãi khuyến khích gộp đơn, ví dụ miễn phí vận chuyển khi đơn có từ hai danh "
+              "mục.")
+
+    h2(doc, "7.7. Đánh giá tập luật thu được (kịch bản MULTI)")
     rules = res["rules"]
     if rules is not None and len(rules):
         strong = rules[rules["lift"] >= 1.2]
-        para(doc, f"Với tham số luật cuối cùng (mục 6.6), thu được {num(len(rules))} luật có "
+        para(doc, f"Với tham số luật cuối cùng (mục 6.6) trên các giỏ đa danh mục, thu được {num(len(rules))} luật có "
                   f"confidence vượt ngưỡng, trong đó {num(len(strong))} luật có lift ≥ 1,2. Lift "
                   f"trung vị của toàn bộ luật là {vn(rules['lift'].median(), 2)}, confidence "
                   f"trung vị {pct(rules['confidence'].median())}, support trung vị "
@@ -570,12 +622,12 @@ def section7(doc, res, out_fig: Path):
     figure(doc, out_fig / "03_rules_scatter.png",
            "Hình 7.4: Phân bố luật theo Support – Confidence, màu thể hiện Lift",
            width_cm=13, hint="outputs/figures/03_rules_scatter.png")
-    para(doc, "Biểu đồ phân tán cho thấy đặc trưng điển hình của dữ liệu thưa: hầu hết luật có "
-              "support rất nhỏ và confidence thấp, nhưng một số luật vẫn có lift cao (màu sáng). "
-              "Những luật này là các quan hệ bổ trợ thật sự giữa hai danh mục, dù không phổ biến "
-              "trên toàn thị trường. Ngược lại, các luật có support tương đối cao thường liên "
-              "quan đến các danh mục rất phổ biến và có lift gần 1, tức là chủ yếu do tần suất "
-              "nền chứ không do mối liên hệ.")
+    para(doc, "Biểu đồ phân tán cho thấy phần lớn luật tập trung ở vùng support thấp, trong đó "
+              "một số luật có lift cao (màu sáng). Đây là các quan hệ bổ trợ thật sự giữa hai "
+              "danh mục, dù số đơn không nhiều. Ngược lại, các luật có support cao nhất thường "
+              "liên quan đến các danh mục rất phổ biến (như bed_bath_table, furniture_decor) và "
+              "có lift gần 1, tức là xuất hiện cùng nhau chủ yếu vì cả hai đều phổ biến, chứ "
+              "không do liên kết đặc biệt.")
     figure(doc, out_fig / "05_lift_heatmap.png",
            "Hình 7.5: Heatmap lift giữa các danh mục trong các luật mạnh",
            width_cm=13, hint="outputs/figures/05_lift_heatmap.png")
@@ -589,6 +641,45 @@ def section7(doc, res, out_fig: Path):
 # ============================================================================
 def _pretty(c):
     return c.replace("_", " ")
+
+
+# Cụm chủ đề cho mục 8.4: (tên, tập danh mục, diễn giải). Luật thuộc cụm khi cả hai vế
+# đều nằm trong tập danh mục của cụm; cụm không có luật nào sẽ tự bị bỏ qua.
+CLUSTERS = [
+    ("Không gian sống – phòng ngủ và trang trí nhà",
+     {"bed_bath_table", "home_confort", "furniture_decor", "art", "construction_tools_lights",
+      "home_construction", "furniture_living_room", "housewares", "home_comfort_2"},
+     "Đây là cụm có số đơn hỗ trợ lớn nhất. Khách mua đồ giường ngủ, đồ dùng tiện nghi trong "
+     "nhà, tranh ảnh, đèn hay đồ nội thất phòng khách thường đang trong quá trình **sắp xếp hoặc "
+     "trang trí lại không gian sống**, nên dễ mua thêm các món cùng phong cách. Luật home "
+     "confort → bed bath table có confidence rất cao cho thấy hai danh mục này gần như là một "
+     "nhu cầu. Người bán nên xây dựng các bộ sản phẩm theo phòng (phòng ngủ, phòng khách) và "
+     "gợi ý đồ trang trí ngay trên trang sản phẩm đồ giường, nội thất."),
+    ("Mẹ và bé – đồ chơi – quà tặng",
+     {"baby", "toys", "cool_stuff", "stationery", "luggage_accessories"},
+     "Các danh mục đồ dùng cho bé, đồ chơi, quà lưu niệm (cool stuff) và văn phòng phẩm liên kết "
+     "chặt với nhau. Hành vi chung là **mua sắm cho trẻ em hoặc mua quà**: phụ huynh mua đồ dùng "
+     "cho bé kèm đồ chơi, hoặc mua đồ chơi kèm văn phòng phẩm cho mùa tựu trường. Gợi ý phù "
+     "hợp là combo “đồ dùng cho bé + đồ chơi theo độ tuổi” và các bộ quà tặng sinh nhật."),
+    ("Chăm sóc cá nhân và sức khỏe",
+     {"health_beauty", "perfumery", "sports_leisure"},
+     "Nước hoa và mỹ phẩm, chăm sóc sức khỏe là cặp có lift cao, phản ánh **nhu cầu chăm sóc bản "
+     "thân** được mua trọn gói trong một lần. Liên kết giữa sức khỏe – làm đẹp và thể thao – giải "
+     "trí cho thấy nhóm khách quan tâm lối sống lành mạnh. Có thể gợi ý nước hoa trên trang mỹ "
+     "phẩm, và thực phẩm chức năng hoặc sản phẩm chăm sóc cơ thể cho khách mua đồ thể thao."),
+    ("Thiết bị công nghệ và phụ kiện",
+     {"telephony", "computers_accessories", "electronics", "audio", "watches_gifts", "auto",
+      "cool_stuff"},
+     "Điện thoại, linh kiện máy tính, đồ điện tử và thiết bị âm thanh thường được mua cùng nhau, "
+     "do khách mua **thiết bị chính kèm phụ kiện** (ốp lưng, tai nghe, cáp sạc…). Luật audio → "
+     "watches gifts có lift rất cao nhưng chỉ dựa trên 6 đơn, nên cần thêm dữ liệu trước khi "
+     "triển khai rộng. Gợi ý phù hợp là khối “phụ kiện tương thích” ở trang sản phẩm công nghệ."),
+    ("Sửa chữa nhà cửa và làm vườn",
+     {"garden_tools", "construction_tools_construction", "home_construction"},
+     "Dụng cụ làm vườn đi cùng dụng cụ xây dựng và vật tư sửa nhà, phản ánh các **dự án tự làm "
+     "(DIY)** quanh nhà. Khách đang làm một dự án thường cần nhiều loại dụng cụ cùng lúc. Người "
+     "bán có thể tạo các gói “bộ dụng cụ cho dự án” và gợi ý chéo giữa hai danh mục."),
+]
 
 
 def section8(doc, res, cfg, out_fig: Path):
@@ -629,16 +720,17 @@ def section8(doc, res, cfg, out_fig: Path):
 
     h2(doc, "8.3. Diễn giải từng luật")
     para(doc, "Mỗi luật được diễn giải theo một khuôn mẫu thống nhất, dễ hiểu với bộ phận kinh "
-              "doanh: *“Khách mua X có c% khả năng mua thêm Y, cao gấp L lần so với một khách "
-              "hàng bất kỳ”*. Mười luật đứng đầu được diễn giải dưới đây.")
+              "doanh: *“Trong các đơn có từ hai danh mục, khách mua X có c% khả năng mua thêm Y, "
+              "cao gấp L lần so với một giỏ đa danh mục bất kỳ”*. Mười luật đứng đầu được diễn "
+              "giải dưới đây.")
     if top is not None and len(top):
         for _, r in top.head(10).iterrows():
             bullet(doc, f"**Luật {int(r['rank'])} – {_pretty(r['antecedents_str'])} → "
-                        f"{_pretty(r['consequents_str'])}:** trong số khách mua "
-                        f"*{_pretty(r['antecedents_str'])}*, có {pct(r['confidence'])} mua thêm "
-                        f"*{_pretty(r['consequents_str'])}* trong cùng đơn, cao gấp "
-                        f"{vn(r['lift'], 1)} lần tỷ lệ mua *{_pretty(r['consequents_str'])}* nói "
-                        f"chung ({pct(r['consequent support'], 2)}). Luật dựa trên "
+                        f"{_pretty(r['consequents_str'])}:** trong các giỏ đa danh mục có "
+                        f"*{_pretty(r['antecedents_str'])}*, {pct(r['confidence'])} giỏ có thêm "
+                        f"*{_pretty(r['consequents_str'])}*, cao gấp {vn(r['lift'], 1)} lần tỷ lệ "
+                        f"chung của *{_pretty(r['consequents_str'])}* trong nhóm này "
+                        f"({pct(r['consequent support'], 1)}). Luật dựa trên "
                         f"{int(r['pair_count'])} đơn hàng thực tế.")
     else:
         for i in range(1, 4):
@@ -653,12 +745,36 @@ def section8(doc, res, cfg, out_fig: Path):
               "(phòng ngủ, nhà bếp…), cùng một đối tượng (trẻ sơ sinh, thú cưng…) hay cùng một "
               "dịp (quà tặng, chuyển nhà…)? Quan hệ là bổ trợ chức năng hay tiện mua chung? "
               "Luật có đối xứng không, tức là chiều ngược lại có confidence tương đương không?")
-    para(doc, "[[Nhóm điền 3–4 cụm insight dựa trên Bảng 8.1, mỗi cụm gồm: tên cụm, các luật "
-              "thuộc cụm, giải thích hành vi khách hàng, mức độ mạnh (lift, số đơn).]]")
-    for k in range(1, 4):
-        h3(doc, f"8.4.{k}. Cụm {k}: [[tên cụm]]")
-        para(doc, "[[Các luật thuộc cụm; giải thích vì sao khách hàng mua chung; ý nghĩa với "
-                  "người bán.]]")
+    rules = res["rules"]
+    if rules is None or rules.empty:
+        para(doc, "[[Nhóm điền 3–4 cụm insight dựa trên Bảng 8.1, mỗi cụm gồm: tên cụm, các luật "
+                  "thuộc cụm, giải thích hành vi khách hàng, mức độ mạnh (lift, số đơn).]]")
+        return_after_clusters = True
+    else:
+        return_after_clusters = False
+        para(doc, "Áp dụng khung trên cho các luật có lift ≥ ngưỡng, nhóm xác định được các cụm "
+                  "dưới đây. Danh sách luật trong mỗi cụm được lấy tự động từ kết quả khai thác; "
+                  "phần diễn giải là nhận định của nhóm.")
+    strong = (rules[(rules["lift"] >= cfg.get("MIN_LIFT", 1.2))
+                    & (rules["pair_count"] >= cfg.get("MIN_PAIR_COUNT", 5))]
+              if not return_after_clusters else None)
+    k = 0
+    for name, cats, story in CLUSTERS if strong is not None else []:
+        sub = strong[strong["antecedents_str"].isin(cats) & strong["consequents_str"].isin(cats)]
+        if sub.empty:
+            continue
+        # mỗi cặp chỉ giữ chiều confidence cao hơn
+        sub = sub.assign(key=[" | ".join(sorted((a, c))) for a, c in
+                              zip(sub["antecedents_str"], sub["consequents_str"])])
+        sub = sub.sort_values("confidence", ascending=False).drop_duplicates("key") \
+                 .sort_values("lift", ascending=False)
+        k += 1
+        h3(doc, f"8.4.{k}. Cụm {k}: {name}")
+        para(doc, story)
+        for _, r in sub.iterrows():
+            bullet(doc, f"{_pretty(r['antecedents_str'])} → {_pretty(r['consequents_str'])}: "
+                        f"lift {vn(r['lift'], 2)}, confidence {pct(r['confidence'])}, "
+                        f"{int(r['pair_count'])} đơn.")
 
     h2(doc, "8.5. Đề xuất chiến lược cross-selling")
     para(doc, "Không phải luật nào cũng nên được khai thác theo cùng một cách. Dựa trên đặc "
@@ -842,8 +958,9 @@ def section10(doc, res):
 
     h2(doc, "10.2. Hạn chế")
     bullets(doc, [
-        "**Dữ liệu rất thưa:** phần lớn đơn chỉ có một danh mục, nên support của luật nhỏ và số "
-        "luật có độ tin cậy thống kê cao còn hạn chế.",
+        "**Dữ liệu rất thưa:** phần lớn đơn chỉ có một danh mục, nên luật phải khai thác trên "
+        "nhóm giỏ đa danh mục; confidence và support là xác suất có điều kiện trong nhóm này, và "
+        "số đơn hỗ trợ mỗi luật còn nhỏ.",
         "**Mức danh mục còn thô:** một số danh mục rất rộng (ví dụ housewares) gộp nhiều loại "
         "sản phẩm khác nhau, làm giảm độ cụ thể của gợi ý.",
         "**Chỉ xét trong một đơn hàng:** chưa khai thác hành vi mua lặp lại của cùng khách hàng "
@@ -917,7 +1034,7 @@ def build_part2(doc, root: Path, out_dir: Path, report_fig: Path):
     page_break(doc)
     section6(doc, cfg, report_fig)
     page_break(doc)
-    section7(doc, res, out_fig)
+    section7(doc, res, cfg, out_fig)
     page_break(doc)
     section8(doc, res, cfg, out_fig)
     page_break(doc)
