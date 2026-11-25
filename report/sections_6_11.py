@@ -432,7 +432,8 @@ def section7(doc, res, cfg, out_fig: Path):
     libs = (f"pandas {env['pandas']}, NumPy {env['numpy']}, mlxtend {env['mlxtend']} "
             if env else "pandas, NumPy, mlxtend ")
     table(doc, ["Thành phần", "Cấu hình"],
-          [["CPU", f"{env['cpu']} ({env['cores']} luồng)" if env else "[[tên CPU, số nhân]]"],
+          [["CPU", f"{env['cpu']} ({env['cores']} luồng)" if "cpu" in env
+                   else env.get("processor") or "[[tên CPU, số nhân]]"],
            ["RAM", f"{vn(env['ram_gb'], 1)} GB" if env.get("ram_gb") else "[[dung lượng RAM]]"],
            ["Hệ điều hành", env.get("os", "[[Windows 10/11, macOS…]]")],
            ["Ngôn ngữ", f"Python {env.get('python', '[[phiên bản]]')}"],

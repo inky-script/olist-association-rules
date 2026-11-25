@@ -27,7 +27,13 @@ olist-association-rules/
    ```
    pip install -r requirements.txt
    ```
-3. Chạy lần lượt:
+3. **Cách chính (dùng để nộp bài):** mở `NhomXX_Code.ipynb` và chọn *Kernel → Restart & Run All*
+   (khoảng 2–6 phút). Notebook tự cài thư viện còn thiếu, chạy toàn bộ pipeline và ghi kết quả vào
+   `outputs/` và `models/rules.csv`.
+
+   Xem thêm `CHECKLIST_NOP_BAI.md` để đối chiếu với thang điểm.
+
+4. Cách khác, chạy bằng script theo thứ tự:
    ```
    python src/phase1_preprocessing.py
    python src/phase2_mining.py
